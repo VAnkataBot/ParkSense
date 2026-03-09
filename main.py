@@ -1,10 +1,20 @@
+import subprocess
+import sys
+from pathlib import Path
+
 import streamlit as st
 from PIL import Image
 import numpy as np
+from datetime import datetime
+
+MODEL_FILE = Path("models/yoloe-26s-seg.pt")
+if not MODEL_FILE.exists():
+    with st.spinner("First run: building model — this takes a minute..."):
+        subprocess.run([sys.executable, "training/train.py"], check=True)
+
 from core.detector import detect_sign, draw_boxes
 from core.ocr import extract_text
 from core.parser import parse_parking_rules
-from datetime import datetime
 
 st.set_page_config(
     page_title="ParkSence",

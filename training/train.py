@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 from ultralytics import YOLOE
 
 model = YOLOE("yoloe-26s-seg.pt")
@@ -29,5 +30,9 @@ names = [
 
 model.set_classes(names, model.get_text_pe(names))
 
-export_path = model.export(format="pt", imgsz=640, simplify=True)
-print(f"Exported to: {export_path}")
+export_path = Path(model.export(format="pt", imgsz=640, simplify=True))
+
+dest = Path("models") / "yoloe-26s-seg.pt"
+dest.parent.mkdir(exist_ok=True)
+shutil.move(str(export_path), dest)
+print(f"Model saved to: {dest}")
