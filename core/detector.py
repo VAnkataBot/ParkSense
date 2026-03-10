@@ -1,7 +1,11 @@
 from typing import Optional, Tuple, List
+from pathlib import Path
 import numpy as np
 import cv2
 from ultralytics import YOLOE
+from ultralytics.utils import SETTINGS
+
+SETTINGS["weights_dir"] = str(Path(__file__).parent.parent / "models")
 
 MODEL_PATH = "models/yoloe-26s-seg.pt"
 CLASS_NAMES = [
