@@ -10,6 +10,8 @@ build/
 
 # Models
 models/
+images/
+testing_batch/
 
 # Environment
 .env
@@ -24,6 +26,3 @@ models/
 
 .claude
 .playwright-mcp
-/images
-
-/testing_batch
