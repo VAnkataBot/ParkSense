@@ -1,17 +1,16 @@
 [project]
 name = "parksence"
 version = "0.1.0"
-description = "Add your description here"
+description = "Scan a Swedish parking sign to know if you can park"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "clip @ git+https://github.com/openai/CLIP.git",
+    "easyocr>=1.7.2",
+    "transformers>=4.40.0",
     "numpy>=2.4.3",
-    "onnx>=1.20.1",
-    "onnxruntime>=1.24.3",
-    "onnxslim>=0.1.87",
     "opencv-python>=4.13.0.92",
     "pillow>=12.1.1",
-    "pytesseract>=0.3.13",
     "streamlit>=1.55.0",
     "ultralytics>=8.4.21",
     "watchdog>=6.0.0",

@@ -21,3 +21,9 @@ models/
 # IDE
 .idea/
 .vscode/
+
+.claude
+.playwright-mcp
+/images
+
+/testing_batch
