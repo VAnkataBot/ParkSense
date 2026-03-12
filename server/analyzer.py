@@ -1,17 +1,20 @@
 """
-Parking sign analysis with local-first inference and HF cloud fallback.
+Parking sign analysis — cross-platform inference stack.
 
-Primary:  mlx-vlm (Apple Silicon native, 4-bit quantized)
-Fallback: HF Inference API (https://router.huggingface.co) — used when
-          the local model fails OR is not loaded AND HF_TOKEN is set.
+Tier 1 — mlx-vlm      macOS Apple Silicon only (fastest, zero cost)
+Tier 2 — Ollama        any OS with a local GPU/CPU (free, cross-platform)
+Tier 3 — HF cloud      universal fallback (requires HF_TOKEN)
 
 Environment variables:
-  LLM_MODEL   mlx-community model ID  (default: mlx-community/Qwen2.5-VL-3B-Instruct-4bit)
-  HF_TOKEN    HF access token         (enables cloud fallback, optional)
-  HF_MODEL    Model for HF fallback   (default: Qwen/Qwen2.5-VL-72B-Instruct)
+  LLM_MODEL      mlx-community model ID   (default: mlx-community/Qwen3-VL-8B-Instruct-4bit)
+  OLLAMA_MODEL   Ollama model tag         (default: qwen2.5vl:7b)
+  OLLAMA_URL     Ollama base URL          (default: http://localhost:11434)
+  HF_TOKEN       HF access token          (enables cloud fallback)
+  HF_MODEL       HF model ID              (default: Qwen/Qwen2.5-VL-72B-Instruct)
 """
 
 import os
+import sys
 import json
 import base64
 import logging
@@ -22,17 +25,20 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-LOCAL_MODEL_ID  = os.getenv("LLM_MODEL", "mlx-community/Qwen3-VL-8B-Instruct-4bit")
-MODEL_DIR       = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
-HF_TOKEN        = os.getenv("HF_TOKEN")
-HF_ENDPOINT     = "https://router.huggingface.co/v1/chat/completions"
+# ── Config ─────────────────────────────────────────────────────────────────────
 
-# Cloud fallback model options (set via HF_MODEL env var):
-#   Qwen/Qwen2.5-VL-72B-Instruct      — best OCR scores (DocVQA 96.4), Hyperbolic
-#   Qwen/Qwen3-VL-30B-A3B-Instruct    — newer gen, 3B active params, cheap, Novita
-#   Qwen/Qwen3-VL-235B-A22B-Instruct  — most capable Qwen VL to date, Novita
-#   meta-llama/Llama-4-Scout-17B-16E-Instruct — fastest (Groq)
+LOCAL_MODEL_ID = os.getenv("LLM_MODEL", "mlx-community/Qwen3-VL-8B-Instruct-4bit")
+MODEL_DIR      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
+
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3-vl:8b")
+OLLAMA_URL   = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+
+HF_TOKEN    = os.getenv("HF_TOKEN")
+HF_ENDPOINT = "https://router.huggingface.co/v1/chat/completions"
 HF_MODEL_ID = os.getenv("HF_MODEL", "Qwen/Qwen2.5-VL-72B-Instruct")
+
+# Detect platform once at import time
+_IS_APPLE_SILICON = sys.platform == "darwin" and os.uname().machine == "arm64"
 
 VEHICLE_LABELS = {
     "car":        "a regular passenger car",
@@ -111,7 +117,7 @@ Reply with ONLY valid JSON, no other text:
 {{"signs": ["one short phrase each"], "notes": ["max 10 words each"], "can_park": true/false/null, "message": "max 15 words"}}"""
 
 
-# ── Local model (mlx-vlm, Apple Silicon native) ───────────────────────────────
+# ── Tier 1: mlx-vlm (macOS Apple Silicon only) ───────────────────────────────
 
 _model     = None
 _processor = None
@@ -119,7 +125,7 @@ _processor = None
 
 def _load_local_model():
     global _model, _processor
-    logger.info(f"Loading local mlx model: {LOCAL_MODEL_ID}")
+    logger.info(f"Loading mlx model: {LOCAL_MODEL_ID}")
     os.makedirs(MODEL_DIR, exist_ok=True)
 
     from huggingface_hub import snapshot_download
@@ -131,23 +137,21 @@ def _load_local_model():
         snapshot_download(LOCAL_MODEL_ID, local_dir=local_path)
 
     _model, _processor = load(local_path, trust_remote_code=True)
-    logger.info("Local mlx model ready")
+    logger.info("mlx model ready")
 
 
-def _infer_local(image: Image.Image, prompt_text: str) -> str:
+def _infer_mlx(image: Image.Image, prompt_text: str) -> str:
     global _model, _processor
     if _model is None:
         _load_local_model()
 
     from mlx_vlm import generate
 
-    # Save image to a temp file — mlx_vlm works best with file paths
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
         image.save(tmp, format="JPEG", quality=90)
         tmp_path = tmp.name
 
     try:
-        # Apply the model's chat template if the processor supports it
         if hasattr(_processor, "apply_chat_template"):
             messages = [{"role": "user", "content": [
                 {"type": "image"},
@@ -160,8 +164,7 @@ def _infer_local(image: Image.Image, prompt_text: str) -> str:
             formatted_prompt = prompt_text
 
         result = generate(
-            _model,
-            _processor,
+            _model, _processor,
             prompt=formatted_prompt,
             image=tmp_path,
             max_tokens=1024,
@@ -173,7 +176,48 @@ def _infer_local(image: Image.Image, prompt_text: str) -> str:
         os.unlink(tmp_path)
 
 
-# ── HF cloud fallback ─────────────────────────────────────────────────────────
+# ── Tier 2: Ollama (cross-platform local) ────────────────────────────────────
+
+def _ollama_available() -> bool:
+    """Check if Ollama is running and has the requested model pulled."""
+    import urllib.request
+    import urllib.error
+    try:
+        with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=2) as r:
+            tags = json.loads(r.read())
+        models = [m["name"] for m in tags.get("models", [])]
+        return any(OLLAMA_MODEL.split(":")[0] in m for m in models)
+    except Exception:
+        return False
+
+
+def _infer_ollama(image_b64: str, prompt_text: str) -> str:
+    import urllib.request
+
+    payload = json.dumps({
+        "model": OLLAMA_MODEL,
+        "stream": False,
+        "options": {"temperature": 0.1, "num_predict": 1024},
+        "messages": [{
+            "role": "user",
+            "content": prompt_text,
+            "images": [image_b64],
+        }],
+    }).encode()
+
+    req = urllib.request.Request(
+        f"{OLLAMA_URL}/api/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = json.loads(resp.read())
+
+    return data["message"]["content"].strip()
+
+
+# ── Tier 3: HF cloud ──────────────────────────────────────────────────────────
 
 def _infer_hf_cloud(image_b64: str, prompt_text: str) -> str:
     import urllib.request
@@ -225,24 +269,37 @@ def analyze_image(
 
     raw: str | None = None
 
-    # 1. Try local model
-    try:
-        raw = _infer_local(image, prompt_text)
-        logger.info("Inference via local mlx model")
-    except Exception as e:
-        logger.warning(f"Local model failed: {e}")
+    # Tier 1 — mlx-vlm (Apple Silicon only)
+    if _IS_APPLE_SILICON:
+        try:
+            raw = _infer_mlx(image, prompt_text)
+            logger.info("Inference via mlx-vlm")
+        except Exception as e:
+            logger.warning(f"mlx-vlm failed: {e}")
 
-    # 2. Fallback to HF cloud if local failed and token is available
+    # Tier 2 — Ollama (any OS, if running locally)
+    if raw is None:
+        if _ollama_available():
+            try:
+                raw = _infer_ollama(image_b64, prompt_text)
+                logger.info(f"Inference via Ollama ({OLLAMA_MODEL})")
+            except Exception as e:
+                logger.warning(f"Ollama failed: {e}")
+        else:
+            logger.info("Ollama not available — skipping")
+
+    # Tier 3 — HF cloud
     if raw is None:
         if not HF_TOKEN:
             raise RuntimeError(
-                "Local model failed and HF_TOKEN is not set. "
-                "Set HF_TOKEN to enable cloud fallback."
+                "No inference backend available. Options:\n"
+                "  • macOS Apple Silicon: mlx-vlm runs automatically\n"
+                f"  • Any OS: install Ollama and run: ollama pull {OLLAMA_MODEL}\n"
+                "  • Any OS: set HF_TOKEN for cloud fallback"
             )
-        logger.info(f"Falling back to HF cloud: {HF_MODEL_ID}")
+        logger.info(f"Inference via HF cloud ({HF_MODEL_ID})")
         raw = _infer_hf_cloud(image_b64, prompt_text)
 
-    # Extract JSON block from response
     start = raw.index("{")
     end   = raw.rindex("}") + 1
     return json.loads(raw[start:end])

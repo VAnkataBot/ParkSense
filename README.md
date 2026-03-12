@@ -97,13 +97,34 @@ Activate the environment:
 source .venv/bin/activate
 ```
 
+The server auto-detects which inference backend to use:
+
+| OS | Backend | Setup needed |
+|---|---|---|
+| macOS Apple Silicon | mlx-vlm (automatic) | Nothing — model downloads on first run |
+| Linux / Windows | Ollama | `ollama pull qwen3-vl:8b` |
+| Any OS | HF cloud fallback | Set `HF_TOKEN` env var |
+
 Configure environment variables (optional):
 
 ```env
-LLM_MODEL=mlx-community/Qwen3-VL-8B-Instruct-4bit   # local model
+LLM_MODEL=mlx-community/Qwen3-VL-8B-Instruct-4bit   # macOS: override mlx model
+OLLAMA_MODEL=qwen3-vl:8b                             # Linux/Windows: Ollama model tag
+OLLAMA_URL=http://localhost:11434                      # Ollama server URL
 HF_TOKEN=hf_...                                        # enables cloud fallback
 HF_MODEL=Qwen/Qwen2.5-VL-72B-Instruct                 # cloud fallback model
 SECRET_KEY=your-secret-key                             # JWT signing key
+```
+
+**Linux / Windows — install Ollama first:**
+
+```sh
+# Linux
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen3-vl:8b
+
+# Windows — download from https://ollama.com then:
+ollama pull qwen3-vl:8b
 ```
 
 Start the server:
@@ -112,7 +133,7 @@ Start the server:
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-The first run downloads the local model (~5 GB) to `server/model/`.
+On macOS Apple Silicon the first run downloads the mlx model (~5 GB) to `server/model/`. On Linux/Windows, Ollama handles its own model storage.
 
 ### Android App
 

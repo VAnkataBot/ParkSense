@@ -23,9 +23,16 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app):
-    import asyncio
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, analyzer._load_local_model)
+    if analyzer._IS_APPLE_SILICON:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, analyzer._load_local_model)
+    else:
+        import logging
+        logging.getLogger(__name__).info(
+            "Non-Apple-Silicon host — mlx-vlm skipped. "
+            f"Ollama ({analyzer.OLLAMA_MODEL}) or HF cloud will be used."
+        )
     yield
 
 app = FastAPI(title="ParkSence API", version="1.0.0", lifespan=lifespan)
