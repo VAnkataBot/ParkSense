@@ -1,6 +1,6 @@
 # ParkSence
 
-**Never guess a parking sign again.** Point your phone at any Swedish parking sign, and ParkSence tells you instantly — can you park here, right now, for your vehicle.
+**Never guess a parking sign again.** Point your phone at any Swedish parking sign, and ParkSence tells you instantly if you can park here, right now, for your vehicle.
 
 ## Overview
 
