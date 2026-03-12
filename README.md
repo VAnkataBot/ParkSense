@@ -97,34 +97,24 @@ Activate the environment:
 source .venv/bin/activate
 ```
 
-The server auto-detects which inference backend to use:
+The server auto-detects which inference backend to use — no manual setup required:
 
 | OS | Backend | Setup needed |
 |---|---|---|
 | macOS Apple Silicon | mlx-vlm (automatic) | Nothing — model downloads on first run |
-| Linux / Windows | Ollama | `ollama pull qwen3-vl:8b` |
+| Linux / Windows / macOS Intel | transformers (automatic) | Nothing — model downloads on first run |
 | Any OS | HF cloud fallback | Set `HF_TOKEN` env var |
+
+On Linux/Windows the server downloads `Qwen/Qwen3-VL-8B-Instruct` (~16 GB fp16, or ~5 GB with 4-bit via `bitsandbytes`) to `server/model/` on first run. A CUDA-capable GPU is recommended; CPU inference works but is slow.
 
 Configure environment variables (optional):
 
 ```env
 LLM_MODEL=mlx-community/Qwen3-VL-8B-Instruct-4bit   # macOS: override mlx model
-OLLAMA_MODEL=qwen3-vl:8b                             # Linux/Windows: Ollama model tag
-OLLAMA_URL=http://localhost:11434                      # Ollama server URL
+TRANSFORMERS_MODEL=Qwen/Qwen3-VL-8B-Instruct          # Linux/Windows: override transformers model
 HF_TOKEN=hf_...                                        # enables cloud fallback
 HF_MODEL=Qwen/Qwen2.5-VL-72B-Instruct                 # cloud fallback model
 SECRET_KEY=your-secret-key                             # JWT signing key
-```
-
-**Linux / Windows — install Ollama first:**
-
-```sh
-# Linux
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen3-vl:8b
-
-# Windows — download from https://ollama.com then:
-ollama pull qwen3-vl:8b
 ```
 
 Start the server:
@@ -133,7 +123,7 @@ Start the server:
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-On macOS Apple Silicon the first run downloads the mlx model (~5 GB) to `server/model/`. On Linux/Windows, Ollama handles its own model storage.
+On first run the model (~5–16 GB depending on quantization) is downloaded automatically to `server/model/`.
 
 ### Android App
 
@@ -184,7 +174,8 @@ On macOS Apple Silicon the first run downloads the mlx model (~5 GB) to `server/
 | Android | Kotlin, CameraX, ViewBinding, Coroutines |
 | iOS | Swift, SwiftUI, AVFoundation, Vision |
 | Server | FastAPI, SQLAlchemy, SQLite |
-| AI (local) | mlx-vlm, Qwen3-VL-8B-Instruct-4bit (Apple Silicon) |
+| AI (local/macOS) | mlx-vlm, Qwen3-VL-8B-Instruct-4bit (Apple Silicon) |
+| AI (local/Linux-Win) | transformers + torch, Qwen3-VL-8B-Instruct (auto-download) |
 | AI (cloud) | HuggingFace Inference API, Qwen2.5-VL-72B |
 | Auth | JWT (python-jose), bcrypt (passlib) |
 | Package mgmt | uv |

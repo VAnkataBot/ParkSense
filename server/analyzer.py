@@ -1,16 +1,15 @@
 """
 Parking sign analysis — cross-platform inference stack.
 
-Tier 1 — mlx-vlm      macOS Apple Silicon only (fastest, zero cost)
-Tier 2 — Ollama        any OS with a local GPU/CPU (free, cross-platform)
-Tier 3 — HF cloud      universal fallback (requires HF_TOKEN)
+Tier 1 — mlx-vlm        macOS Apple Silicon only (fastest, zero cost)
+Tier 2 — transformers    any OS with a GPU/CPU — auto-downloads Qwen3-VL-8B
+Tier 3 — HF cloud        universal fallback (requires HF_TOKEN)
 
 Environment variables:
-  LLM_MODEL      mlx-community model ID   (default: mlx-community/Qwen3-VL-8B-Instruct-4bit)
-  OLLAMA_MODEL   Ollama model tag         (default: qwen2.5vl:7b)
-  OLLAMA_URL     Ollama base URL          (default: http://localhost:11434)
-  HF_TOKEN       HF access token          (enables cloud fallback)
-  HF_MODEL       HF model ID              (default: Qwen/Qwen2.5-VL-72B-Instruct)
+  LLM_MODEL           mlx-community model ID       (default: mlx-community/Qwen3-VL-8B-Instruct-4bit)
+  TRANSFORMERS_MODEL  HuggingFace model ID          (default: Qwen/Qwen3-VL-8B-Instruct)
+  HF_TOKEN            HF access token               (enables cloud fallback)
+  HF_MODEL            HF cloud model ID             (default: Qwen/Qwen2.5-VL-72B-Instruct)
 """
 
 import os
@@ -27,11 +26,9 @@ logger = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
-LOCAL_MODEL_ID = os.getenv("LLM_MODEL", "mlx-community/Qwen3-VL-8B-Instruct-4bit")
-MODEL_DIR      = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
-
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3-vl:8b")
-OLLAMA_URL   = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+LOCAL_MODEL_ID       = os.getenv("LLM_MODEL", "mlx-community/Qwen3-VL-8B-Instruct-4bit")
+TRANSFORMERS_MODEL_ID = os.getenv("TRANSFORMERS_MODEL", "unsloth/Qwen3-VL-8B-Instruct-unsloth-bnb-4bit")
+MODEL_DIR            = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
 
 HF_TOKEN    = os.getenv("HF_TOKEN")
 HF_ENDPOINT = "https://router.huggingface.co/v1/chat/completions"
@@ -176,45 +173,71 @@ def _infer_mlx(image: Image.Image, prompt_text: str) -> str:
         os.unlink(tmp_path)
 
 
-# ── Tier 2: Ollama (cross-platform local) ────────────────────────────────────
+# ── Tier 2: transformers (Linux / Windows / macOS Intel — auto-downloads) ─────
 
-def _ollama_available() -> bool:
-    """Check if Ollama is running and has the requested model pulled."""
-    import urllib.request
-    import urllib.error
-    try:
-        with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=2) as r:
-            tags = json.loads(r.read())
-        models = [m["name"] for m in tags.get("models", [])]
-        return any(OLLAMA_MODEL.split(":")[0] in m for m in models)
-    except Exception:
-        return False
+_tf_model     = None
+_tf_processor = None
 
 
-def _infer_ollama(image_b64: str, prompt_text: str) -> str:
-    import urllib.request
+def _load_transformers_model():
+    global _tf_model, _tf_processor
+    import torch
+    from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 
-    payload = json.dumps({
-        "model": OLLAMA_MODEL,
-        "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 1024},
-        "messages": [{
-            "role": "user",
-            "content": prompt_text,
-            "images": [image_b64],
-        }],
-    }).encode()
+    logger.info(f"Loading transformers model: {TRANSFORMERS_MODEL_ID}")
+    os.makedirs(MODEL_DIR, exist_ok=True)
 
-    req = urllib.request.Request(
-        f"{OLLAMA_URL}/api/chat",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
+    # Model is pre-quantized to 4-bit (bnb) — load directly, no runtime quant needed
+    _tf_model = Qwen3VLForConditionalGeneration.from_pretrained(
+        TRANSFORMERS_MODEL_ID,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        cache_dir=MODEL_DIR,
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        data = json.loads(resp.read())
+    # Processor always from the base model
+    _tf_processor = AutoProcessor.from_pretrained(
+        "Qwen/Qwen3-VL-8B-Instruct",
+        cache_dir=MODEL_DIR,
+    )
+    logger.info("Transformers model ready")
 
-    return data["message"]["content"].strip()
+
+def _infer_transformers(image: Image.Image, prompt_text: str) -> str:
+    global _tf_model, _tf_processor
+    if _tf_model is None:
+        _load_transformers_model()
+
+    import torch
+
+    messages = [{"role": "user", "content": [
+        {"type": "image", "image": image},
+        {"type": "text",  "text": prompt_text},
+    ]}]
+
+    text = _tf_processor.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+
+    # qwen-vl-utils gives best results; fall back to direct PIL passing
+    try:
+        from qwen_vl_utils import process_vision_info
+        image_inputs, video_inputs = process_vision_info(messages)
+        inputs = _tf_processor(
+            text=[text], images=image_inputs, videos=video_inputs,
+            padding=True, return_tensors="pt",
+        ).to(_tf_model.device)
+    except ImportError:
+        inputs = _tf_processor(
+            text=[text], images=[image], return_tensors="pt",
+        ).to(_tf_model.device)
+
+    with torch.no_grad():
+        output_ids = _tf_model.generate(
+            **inputs, max_new_tokens=1024, temperature=0.1, do_sample=False,
+        )
+
+    generated = output_ids[:, inputs["input_ids"].shape[1]:]
+    return _tf_processor.batch_decode(generated, skip_special_tokens=True)[0]
 
 
 # ── Tier 3: HF cloud ──────────────────────────────────────────────────────────
@@ -277,16 +300,13 @@ def analyze_image(
         except Exception as e:
             logger.warning(f"mlx-vlm failed: {e}")
 
-    # Tier 2 — Ollama (any OS, if running locally)
+    # Tier 2 — transformers (any OS, auto-downloads model)
     if raw is None:
-        if _ollama_available():
-            try:
-                raw = _infer_ollama(image_b64, prompt_text)
-                logger.info(f"Inference via Ollama ({OLLAMA_MODEL})")
-            except Exception as e:
-                logger.warning(f"Ollama failed: {e}")
-        else:
-            logger.info("Ollama not available — skipping")
+        try:
+            raw = _infer_transformers(image, prompt_text)
+            logger.info(f"Inference via transformers ({TRANSFORMERS_MODEL_ID})")
+        except Exception as e:
+            logger.warning(f"transformers inference failed: {e}")
 
     # Tier 3 — HF cloud
     if raw is None:
@@ -294,7 +314,7 @@ def analyze_image(
             raise RuntimeError(
                 "No inference backend available. Options:\n"
                 "  • macOS Apple Silicon: mlx-vlm runs automatically\n"
-                f"  • Any OS: install Ollama and run: ollama pull {OLLAMA_MODEL}\n"
+                "  • Any OS: install torch + transformers (pip install torch transformers accelerate)\n"
                 "  • Any OS: set HF_TOKEN for cloud fallback"
             )
         logger.info(f"Inference via HF cloud ({HF_MODEL_ID})")
