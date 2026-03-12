@@ -4,7 +4,7 @@
 
 ## Overview
 
-ParkSence is a three-part system built for anyone navigating Stockholm's (or any Swedish city's) maze of parking signs. Native Android and iOS apps stream the camera feed, lock onto the sign, and fire it to a FastAPI backend that runs a multimodal vision model. The model reads every sign, plate, and symbol on the pole and returns a simple verdict: park / don't park / uncertain — personalised to your vehicle type, disability status, and resident permit zone.
+ParkSence is a three-part system built for anyone navigating Stockholm's (or any Swedish city's) maze of parking signs. Native Android and iOS apps stream the camera feed, lock onto the sign, and fire it to a FastAPI backend that runs a multimodal vision model. The model reads every sign, plate, and symbol on the pole and returns a simple verdict: park / don't park / uncertain. Personalised to your vehicle type, disability status, and resident permit zone.
 
 ## Short Demo
 
