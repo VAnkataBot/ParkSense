@@ -1,10 +1,10 @@
 # ParkSence
 
-**Never guess a parking sign again.** Point your phone at any Swedish parking sign, and ParkSence tells you instantly — can you park here, right now, for your vehicle.
+**Never guess a parking sign again.** Point your phone at any Swedish parking sign, and ParkSence tells you instantly - can you park here, right now, for your vehicle.
 
 ## Overview
 
-ParkSence is a three-part system built for anyone navigating Stockholm's (or any Swedish city's) maze of parking signs. Native Android and iOS apps stream the camera feed, lock onto the sign, and fire it to a FastAPI backend that runs a multimodal vision model. The model reads every sign, plate, and symbol on the pole and returns a simple verdict: park / don't park / uncertain — personalised to your vehicle type, disability status, and resident permit zone.
+ParkSence is a three-part system built for anyone navigating Stockholm's (or any Swedish city's) maze of parking signs. Native Android and iOS apps stream the camera feed, lock onto the sign, and fire it to a FastAPI backend that runs a multimodal vision model. The model reads every sign, plate, and symbol on the pole and returns a simple verdict: park / don't park / uncertain - personalised to your vehicle type, disability status, and resident permit zone.
 
 ## Short Demo
 
@@ -14,14 +14,14 @@ https://github.com/user-attachments/assets/59de0738-8cb1-4dbb-bc36-f4b1cd2fe975
 
 ## Features
 
-- **Instant Sign Analysis** — Point, lock, and get a verdict in seconds using a local VLM (Qwen3-VL)
-- **Personalised Verdicts** — Accounts for vehicle type (car, EV, motorcycle, truck, bus), disability permits, and resident zone
-- **Swedish Parking Rules** — Understands the full 3-tier time format (weekday / Saturday / Sunday), zone extent plates, hard-block signs (♿, EV, Boende, Taxi, etc.)
-- **Local-First Inference** — Runs Qwen3-VL-8B 4-bit quantized via mlx-vlm natively on Apple Silicon, zero cloud cost
-- **HF Cloud Fallback** — Automatically falls back to Qwen2.5-VL-72B on Hugging Face if the local model is unavailable
-- **Auth & Profiles** — JWT-based register/login, persistent vehicle profile stored server-side
-- **Native Android App** — CameraX live preview with a scan overlay, haptic feedback, and a clean result card
-- **Native iOS App** — AVFoundation camera pipeline, SwiftUI overlay, full feature parity with Android
+- **Instant Sign Analysis** - Point, lock, and get a verdict in seconds using a local VLM (Qwen3-VL)
+- **Personalised Verdicts** - Accounts for vehicle type (car, EV, motorcycle, truck, bus), disability permits, and resident zone
+- **Swedish Parking Rules** - Understands the full 3-tier time format (weekday / Saturday / Sunday), zone extent plates, hard-block signs (♿, EV, Boende, Taxi, etc.)
+- **Local-First Inference** - Runs Qwen3-VL-8B 4-bit quantized via mlx-vlm natively on Apple Silicon, zero cloud cost
+- **HF Cloud Fallback** - Automatically falls back to Qwen2.5-VL-72B on Hugging Face if the local model is unavailable
+- **Auth & Profiles** - JWT-based register/login, persistent vehicle profile stored server-side
+- **Native Android App** - CameraX live preview with a scan overlay, haptic feedback, and a clean result card
+- **Native iOS App** - AVFoundation camera pipeline, SwiftUI overlay, full feature parity with Android
 
 ---
 
@@ -30,7 +30,7 @@ https://github.com/user-attachments/assets/59de0738-8cb1-4dbb-bc36-f4b1cd2fe975
 1. **Android / iOS app** captures a frame when the camera locks on a sign, attaches the current day and time, and POSTs it to the server.
 2. **FastAPI server** receives the image, resizes it, and passes it to the analyzer along with the user's vehicle profile pulled from the database.
 3. **Analyzer** runs a structured two-phase prompt: first listing every sign/plate visible, then applying Swedish parking rules step-by-step.
-4. **VLM** (local mlx or HF cloud) returns JSON — `signs`, `notes`, `can_park`, `message` — which the app renders as a colour-coded verdict card.
+4. **VLM** (local mlx or HF cloud) returns JSON - `signs`, `notes`, `can_park`, `message` - which the app renders as a colour-coded verdict card.
 
 ---
 
@@ -38,7 +38,7 @@ https://github.com/user-attachments/assets/59de0738-8cb1-4dbb-bc36-f4b1cd2fe975
 
 ```
 server/
-  main.py         # FastAPI app — auth + /api/analyze endpoint
+  main.py         # FastAPI app - auth + /api/analyze endpoint
   analyzer.py     # VLM inference (local mlx + HF cloud fallback)
   auth.py         # JWT helpers (bcrypt + jose)
   models.py       # SQLAlchemy ORM models (User, VehicleType)
@@ -139,10 +139,10 @@ The first run downloads the local model (~5 GB) to `server/model/`.
 | `POST` | `/api/analyze` | Analyze a parking sign image |
 | `GET` | `/health` | Server health check |
 
-**`/api/analyze` request** — `multipart/form-data`:
-- `image` — JPEG/PNG photo of the sign
-- `day` — day name in Swedish (e.g. `Måndag`)
-- `time` — current time (`HH:MM`)
+**`/api/analyze` request** - `multipart/form-data`:
+- `image` - JPEG/PNG photo of the sign
+- `day` - day name in Swedish (e.g. `Måndag`)
+- `time` - current time (`HH:MM`)
 
 **Response:**
 ```json
@@ -150,7 +150,7 @@ The first run downloads the local model (~5 GB) to `server/model/`.
   "signs": ["No parking Mon–Fri 7–19", "Residents zone A exempt"],
   "notes": ["Restriction active on weekdays during business hours"],
   "can_park": false,
-  "message": "No parking — restriction active now"
+  "message": "No parking - restriction active now"
 }
 ```
 
